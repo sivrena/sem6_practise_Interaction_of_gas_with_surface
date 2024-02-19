@@ -7,11 +7,12 @@ from matplotlib.widgets import Slider
 # Класс "Particle" содержит функцию compute_step для вычисления координат и скорости частицы для следующего шага с
 # помощью метода молекулярной динамики. Также содержит функции вычисления скорости после столкновения.
 class Particle:
-    def __init__(self, mass, radius, epsilon, sigma, position, velocity, force, acceleration):
+    def __init__(self, mass, radius, epsilon, sigma, position, velocity, force, acceleration, alpha):
         self.mass = mass #масса частицы
         self.radius = radius #радиус частицы
         self.epsilon = epsilon #глубина потенциальной ямы
         self.sigma = sigma #расстояние, на котором энергия взаимодействия становится нулевой
+        self.alpha = alpha
 
         # позиция частицы, скорость, ускорение, энергия взаимодействия для данной итерации
         self.position = np.array(position)
@@ -62,15 +63,30 @@ class Particle:
         r, v, x = self.radius, self.velocity, self.position
         projx = step * abs(np.dot(v, np.array([1., 0.])))
         projy = step * abs(np.dot(v, np.array([0., 1.])))
-        if abs(x[0]) - r < projx or abs(size - x[0]) - r < projx:
+        if (abs(x[0]) - r < projx) or abs(size - x[0]) - r < projx:
             self.velocity[0] *= -1
         if abs(x[1]) - r < projy or abs(size - x[1]) - r < projy:
-            self.velocity[1] *= -1.
+            self.velocity[1] *= -1
 
-# Вычисляем энергию парного взаимодействия с помощью потенциала Леннарда-Джонса
-def LennardJones (particle_list):
+# Вычисляем энергию парного взаимодействия с помощью потенциала Morze
+def Morze (particle_list):
     force: float
     for i in range(len(particle_list)):
+        for j in range(i + 1, len(particle_list)):
+            r = np.sqrt(np.sum(np.square(particle_list[i].position - particle_list[j].position)))
+            force = particle_list[i].epsilon * particle_list[i].alpha * np.exp(particle_list[i].alpha*(particle_list[i].sigma - r))
+
+            vel = -(particle_list[i].position - particle_list[j].position) * force / r
+
+            if (all(particle_list[i].force)):
+                np.add(particle_list[i].force, vel, out=particle_list[i].force, casting="unsafe")
+            if (all(particle_list[j].force)):
+                np.add(particle_list[j].force, -vel, out=particle_list[i].force, casting="unsafe")
+
+# Вычисляем энергию парного взаимодействия с помощью потенциала Леннарда-Джонса
+def LennardJones (particle_list, num):
+    force: float
+    for i in range(num):
         for j in range(i + 1, len(particle_list)):
             r = np.sqrt(np.sum(np.square(particle_list[i].position - particle_list[j].position)))
             if r < 2.5 * particle_list[i].sigma:
@@ -86,7 +102,7 @@ def LennardJones (particle_list):
 
 ########################################################################################################################
 # Вычисляем позиции и скорости частиц для следующего шага
-def solve_step(particle_list, step, size):
+def solve_step(particle_list, Ag_num, Al_num, step, size):
     # 1. Проверяем столкновение с границей или другой частицей для каждой частицы
     for i in range(len(particle_list)):
         particle_list[i].compute_refl(step, size)
@@ -94,13 +110,37 @@ def solve_step(particle_list, step, size):
             particle_list[i].compute_coll(particle_list[j], step)
 
     # 2. С помощью метода молекулярной динамики вычисляем позицию и скорость
-    LennardJones(particle_list)
+    Morze(particle_list[Ag_num:])
+    LennardJones(particle_list, Ag_num)
     for particle in particle_list:
         particle.compute_step(step)
 
 ########################################################################################################################
+def init_list_Al(N, radius, mass, epsilon, sigma, alpha, boxsize):
+    particle_list = []
 
-def init_list_random(N, radius, mass, epsilon, sigma, boxsize):
+    for i in range(N):
+        #v_mag = np.random.rand(1) * 6
+        #v_ang = np.random.rand(1) * 2 * np.pi
+        #v = np.append(v_mag * np.cos(v_ang), v_mag * np.sin(v_ang))
+        v = np.array([1e-10, 1e-10])
+        f = np.array([0 for i in range (len(v))])
+        a = np.array([0 for i in range(len(v))])
+
+        collision = True
+        while (collision == True):
+            collision = False
+            pos = np.array([radius + i % 16 * 0.5, radius + i // 16 * 0.3])
+            newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha)
+            for j in range(len(particle_list)):
+                collision = newparticle.check_coll(particle_list[j])
+                if collision == True:
+                    break
+
+        particle_list.append(newparticle)
+    return particle_list
+
+def init_list_random_Ag (N, radius, mass, epsilon, sigma, alpha, boxsize):
     # Случайным образом генерируем массив объектов Particle, число частиц равно N
     # В данной программе рассмотрен двумерный случай
     particle_list = []
@@ -116,7 +156,7 @@ def init_list_random(N, radius, mass, epsilon, sigma, boxsize):
         while (collision == True):
             collision = False
             pos = radius + np.random.rand(2) * (boxsize - 2 * radius)
-            newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a)
+            newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha)
             for j in range(len(particle_list)):
                 collision = newparticle.check_coll(particle_list[j])
                 if collision == True:
@@ -125,24 +165,35 @@ def init_list_random(N, radius, mass, epsilon, sigma, boxsize):
         particle_list.append(newparticle)
     return particle_list
 
-particle_number = 150 # число частиц
-boxsize = 10 # границы
+boxsize = 8 # границы
 tfin = 10 # время симуляции
 stepnumber = 200 # число шагов
-radius = 1.06e-1 # данные рассматриваемой частицы
-mass = 6.63352599e-26
-epsilon = 0.00801
-sigma=3.54
-
 timestep = tfin/stepnumber #временной шаг
-particle_list = init_list_random(particle_number, radius, mass, epsilon, sigma, boxsize)
+
+particle_number_Al = 32# число частиц
+radius_Al = 1.21e-01 # данные рассматриваемой частицы
+mass_Al = 4.48038654e-26
+epsilon_Al = 0.2703 #0.03917
+sigma_Al = 3.253
+alpha_Al = 1.1646
+
+particle_number_Ag = 100 # число частиц
+radius_Ag = 1.06e-1 # данные рассматриваемой частицы
+mass_Ag = 0.17911901e-26
+epsilon_Ag = 0.00801
+sigma_Ag = 3.54
+alpha_Ag = 0
+
+particle_list_Al = init_list_Al(particle_number_Al, radius_Al, mass_Al, epsilon_Al, sigma_Al, alpha_Al, boxsize)
+particle_list_Ag = init_list_random_Ag(particle_number_Ag, radius_Ag, mass_Ag, epsilon_Ag, sigma_Ag, alpha_Ag, boxsize)
+
+particle_number = particle_number_Ag + particle_number_Al
+particle_list = np.concatenate([particle_list_Ag, particle_list_Al])
 
 # Вычислительный эксперимент
 for i in range(stepnumber):
-    solve_step(particle_list, timestep, boxsize)
-
-########################################################################################################################
-
+    solve_step(particle_list, particle_number_Ag, particle_number_Al, timestep, boxsize)
+########################################################################################################################\
 # Визуализация решения с помощью библиотеки matplotlib
 
 fig = plt.figure(figsize=(12, 6))
@@ -161,30 +212,19 @@ ax.set_ylim([0, boxsize])
 # Отображаем движение частиц
 circle = [None] * particle_number
 for i in range(particle_number):
-    circle[i] = plt.Circle((particle_list[i].solpos[0][0], particle_list[i].solpos[0][1]), particle_list[i].radius,
+    if (i<particle_number_Ag):
+        circle[i] = plt.Circle((particle_list[i].solpos[0][0], particle_list[i].solpos[0][1]), particle_list[i].radius,
                            ec="black", lw=0.5)
+    else:
+        circle[i] = plt.Circle((particle_list[i].solpos[0][0], particle_list[i].solpos[0][1]), particle_list[i].radius,
+                               ec="black", color="red", lw=0.5)
     ax.add_patch(circle[i])
 
 # Строим диаграмму распределение молекул по скоростям, исходя из результатов эксперимента
-vel_mod = [particle_list[i].solvel_mag[0] for i in range(len(particle_list))]
+vel_mod = [particle_list[i].solvel_mag[0] for i in range(len(particle_list[:particle_number_Ag]))]
 hist.hist(vel_mod, bins=30, density=True, label="Simulation Data")
 hist.set_xlabel("Speed")
 hist.set_ylabel("Frecuency Density")
-
-# Также вычислим распределение Максвелла
-
-# Полная энергия системы должна быть постоянной
-def total_Energy(particle_list, index):
-    return sum([particle_list[i].mass / 2. * particle_list[i].solvel_mag[index] ** 2 for i in range(len(particle_list))])
-
-E = total_Energy(particle_list, 0) # полная энергия
-Average_E = E / len(particle_list) # энергия одной частицы
-k = 1.38064852e-23 # постоянная больцмана
-T = 2 * Average_E / (2 * k) # температура системы
-m = particle_list[0].mass # масса частицы
-v = np.linspace(0, 10, 100) # диапазон рассматриваемых скоростей
-fv = 4 * np.pi * v ** 2 * np.power(m / (2 * np.pi * T * k), 1.5) * np.exp(-m * v ** 2 / (2 * T * k))
-hist.plot(v, fv, label="Maxwell distribution")
 hist.legend(loc="upper right")
 
 # Используем Slider (ползунок) для отображения изменений с течением времени
@@ -201,20 +241,11 @@ def update(time):
     hist.clear()
 
     # Распределение молекул по скоростям, исходя из результатов эксперимента
-    vel_mod = [particle_list[j].solvel_mag[i] for j in range(len(particle_list))]
+    vel_mod = [particle_list[j].solvel_mag[i] for j in range(len(particle_list[:particle_number_Ag]))]
+    print(sum(vel_mod)/len(vel_mod))
     hist.hist(vel_mod, bins=30, density=True, label="Simulation Data")
     hist.set_xlabel("Speed")
     hist.set_ylabel("Frecuency Density")
-
-    # Распределение Максвелла
-    E = total_Energy(particle_list, i)
-    Average_E = E / len(particle_list)
-    k = 1.38064852e-23
-    T = 2 * Average_E / (2 * k)
-    m = particle_list[0].mass
-    v = np.linspace(0, 10, 100)
-    fv = 4 * np.pi * v ** 2 * np.power(m / (2 * np.pi * T * k), 1.5) * np.exp(-m * v ** 2 / (2 * T * k))
-    hist.plot(v, fv, label="Maxwell distribution")
     hist.legend(loc="upper right")
 
 slider.on_changed(update)
