@@ -1,7 +1,7 @@
 import Dump
 
 import numpy as np
-from math import ceil
+from math import ceil, pi, sin, cos
 import os
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
@@ -34,10 +34,14 @@ class Particle:
         self.solvel = [np.copy(self.velocity)]
         self.solvel_mag = [np.linalg.norm(np.copy(self.velocity))]
 
-    def compute_step(self, step):
+    def compute_step(self, step, z):
         # вычисляем позицию и скорость частицы для следующего шага
         self.acceleration = 1 / self.mass * self.force
         self.position += step * self.velocity + 1 / 2 * self.acceleration * step * step
+        if self.adsorbate:
+            if self.position[2] < z:
+                d = self.position[2]
+                self.position[2] += z - d
         self.velocity += self.acceleration * step
 
         self.solpos.append(np.copy(self.position))
@@ -68,7 +72,12 @@ class Particle:
             if ads1 == ads2 and (self.free and particle.free):
                 self.velocity = v1 - 2. * m2 / (m1 + m2) * np.dot(v1 - v2, di) / (np.linalg.norm(di) ** 2.) * di
                 particle.velocity = v2 - 2. * m1 / (m2 + m1) * np.dot(v2 - v1, (-di)) / (np.linalg.norm(di) ** 2.) * (-di)
-            elif ads1 == ads2 and self.free:
+            else:
+                if ads1:
+                    self.velocity = v1 - 2. * m2 / (m1 + m2) * np.dot(v1 - v2, di) / (np.linalg.norm(di) ** 2.) * di
+                elif ads2:
+                    particle.velocity = v2 - 2. * m1 / (m2 + m1) * np.dot(v2 - v1, (-di)) / (np.linalg.norm(di) ** 2.) * (-di)
+            """elif ads1 == ads2 and self.free:
                 self.velocity = v1 - 2. * m2 / (m1 + m2) * np.dot(v1 - v2, di) / (np.linalg.norm(di) ** 2.) * di
             elif ads1 == ads2 and particle.free:
                 particle.velocity = v2 - 2. * m1 / (m2 + m1) * np.dot(v2 - v1, (-di)) / (np.linalg.norm(di) ** 2.) * (-di)
@@ -79,7 +88,7 @@ class Particle:
                     self.velocity -= v1
                     self.position = [particle.position[0], particle.position[1], particle.position[2] + r1 + r2]
                     self.free = False
-                    particle.free = False
+                    particle.free = False"""
 
     def compute_refl(self, step, size):
         # вычисляем скорость частицы после столкновения с границей
@@ -145,7 +154,7 @@ def Morze (particle_list):
 
 ########################################################################################################################
 # Вычисляем позиции и скорости частиц для следующего шага
-def solve_step(particle_list, Ag_num, Al_num, step, size):
+def solve_step(particle_list, Ag_num, Al_num, step, size, z):
     # 1. Проверяем столкновение с границей или другой частицей для каждой частицы
     for i in range(len(particle_list)):
         particle_list[i].compute_refl(step, size)
@@ -156,34 +165,91 @@ def solve_step(particle_list, Ag_num, Al_num, step, size):
     Morze(particle_list[Ag_num:])
     LennardJones(particle_list, Ag_num)
     for particle in particle_list:
-        particle.adsorption()
-        particle.compute_step(step)
+        #particle.adsorption()
+        particle.compute_step(step, z)
 
 ########################################################################################################################
 def init_list_Al(N, radius, mass, epsilon, sigma, alpha, borders):
     particle_list = []
+    particle_position_x = np.array([])
+    particle_position_y = np.array([])
+    particle_position_z = np.array([])
 
+    particle_number_bottom = [1, 6, 9]
+    angle_bottom = [2 * pi / particle_number_bottom[i] for i in range(len(particle_number_bottom))]
+    radius_bottom = [radius * (i + 1) for i in range(len(particle_number_bottom))]
+
+    particle_number_layers = [13, 16, 19, 22, 25, 28]
+    angle_layers = [2 * pi / particle_number_layers[i] for i in range(len(particle_number_layers))]
+    radius_layers = [radius * (i + len(particle_number_bottom) + 1) for i in range(len(particle_number_layers))]
+
+    center_x = borders[0] / 2
+    center_y = borders[1] / 2
+    particle_position_x = np.append(particle_position_x, center_x)
+    particle_position_y = np.append(particle_position_y, center_y)
+    particle_position_z = np.append(particle_position_z, 0.)
+
+    surface = [31, 34, 39, 44, 49, 54]
+    angle_surface = [2 * pi / surface[i] for i in range(len(surface))]
+    radius_surface = [radius * (i + len(particle_number_bottom) + len(particle_number_layers) + 1) for i in
+                      range(len(surface))]
+
+    for i in range(1, len(particle_number_bottom)):
+        r = radius_bottom[i]
+        angle = angle_bottom[i]
+        for j in range(particle_number_bottom[i]):
+            particle_position_x = np.append(particle_position_x, center_x + r * cos(angle))
+            particle_position_y = np.append(particle_position_y, center_y + r * sin(angle))
+            particle_position_z = np.append(particle_position_z, 0.)
+            angle += angle_bottom[i]
+
+    for i in range(len(particle_number_layers)):
+        r = radius_layers[i]
+        angle = angle_layers[i]
+        for j in range(particle_number_layers[i]):
+            particle_position_x = np.append(particle_position_x, center_x + r * cos(angle))
+            particle_position_y = np.append(particle_position_y, center_y + r * sin(angle))
+            particle_position_z = np.append(particle_position_z, (i + 1) * radius)
+            angle += angle_layers[i]
+
+    z = particle_position_z[(len(particle_position_z) - 1)]
+    k = 1.0
+    for i in range(len(surface)):
+        r = radius_surface[i]
+        angle = angle_surface[i]
+        for j in range(surface[i]):
+            x = center_x + r * k * cos(angle)
+            y = center_y + r * k * sin(angle)
+            if (x <= borders[0] and y <= borders[1] and z<= borders[2] and x >= 0 and y >= 0 and z >= 0):
+                particle_position_x = np.append(particle_position_x, x)
+                particle_position_y = np.append(particle_position_y, y)
+                particle_position_z = np.append(particle_position_z, z)
+            angle += angle_surface[i]
+        k += 0.055
+
+    N += len(particle_position_x)
     for i in range(N):
         v = np.append(1e-10, 1e-10)
         v = np.append(v, 1e-10)
         f = np.array([0 for i in range (len(v))])
         a = np.array([0 for i in range(len(v))])
-
-        coeff = np.sqrt(N)
-        collision = True
-        while (collision == True):
-            collision = False
-            pos = np.array([radius + i % coeff * 0.27, radius + i // coeff * 0.27, 0])
-            newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha, adsorbate=0)
-            for j in range(len(particle_list)):
-                collision = newparticle.check_coll(particle_list[j])
-                if collision == True:
-                    break
+        pos = np.array([particle_position_x[i], particle_position_y[i], particle_position_z[i]])
+        newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha, adsorbate=0)
+        #coeff = np.sqrt(N)
+        #collision = True
+        #while (collision == True):
+            #collision = False
+            #pos = np.array([particle_position_x[i], particle_position_y[i], particle_position_z[i]])
+            #newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha, adsorbate=0)
+            #for j in range(len(particle_list)):
+                #collision = newparticle.check_coll(particle_list[j])
+                #if collision == True:
+                    #break
 
         particle_list.append(newparticle)
     return particle_list
 
-def init_list_random_Ag (N, radius, mass, epsilon, sigma, alpha, borders):
+def init_list_random_Ag (N, radius, mass, epsilon, sigma, alpha, borders, z):
     # Случайным образом генерируем массив объектов Particle, число частиц равно N
     # В данной программе рассмотрен двумерный случай
     particle_list = []
@@ -207,8 +273,8 @@ def init_list_random_Ag (N, radius, mass, epsilon, sigma, alpha, borders):
             pos = np.append(pos, posx)
             pos = np.append(pos, posy)
             pos = np.append(pos, posz)
-            if pos[2] < 0.25:
-                pos[2] += 0.25
+            if pos[2] < z:
+                pos[2] += z
             newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha, adsorbate=1)
             for j in range(len(particle_list)):
                 collision = newparticle.check_coll(particle_list[j])
@@ -219,23 +285,22 @@ def init_list_random_Ag (N, radius, mass, epsilon, sigma, alpha, borders):
     return particle_list
 
 #boxsize = 4
-Borders = [4, 4, 5] # границы (в нанометрах)
+Borders = [4, 4, 4] # границы (в нанометрах)
 tfin = 10 # время симуляции
 stepnumber = 200 # число шагов
 timestep = tfin/stepnumber #временной шаг
-volume = Borders[0] * Borders[1] * Borders[2]
 
 BoltsmanConstant = 1.38 * 10e-23
 temperature = 300 # Кельвины
 
-particle_number_Al = (ceil(Borders[0] * 3.7)) ** 2 # число частиц
+particle_number_Al = 0 # число частиц
 radius_Al = 1.21e-01 # данные рассматриваемой частицы
 mass_Al = 4.4803831e-26
 epsilon_Al = 0.2703 #0.03917
 sigma_Al = 3.253
 alpha_Al = 1.1646
 
-particle_number_Ag = 100 # число частиц
+particle_number_Ag = 75 # число частиц
 radius_Ag = 1.06e-1 # данные рассматриваемой частицы
 mass_Ag = 0.17911901e-26
 epsilon_Ag = 0.00801
@@ -243,13 +308,26 @@ sigma_Ag = 3.54
 alpha_Ag = 0
 
 particle_list_Al = init_list_Al(particle_number_Al, radius_Al, mass_Al, epsilon_Al, sigma_Al, alpha_Al, Borders)
-particle_list_Ag = init_list_random_Ag(particle_number_Ag, radius_Ag, mass_Ag, epsilon_Ag, sigma_Ag, alpha_Ag, Borders)
+z = particle_list_Al[len(particle_list_Al) - 1].position[2]
+center_x = Borders[0] / 2
+center_y = Borders[1] / 2
+rr = (particle_list_Al[len(particle_list_Al) - 1].position[0] - center_x) ** 2 + \
+    (particle_list_Al[len(particle_list_Al) - 1].position[1] - center_y) ** 2
+volume = Borders[0] * Borders[1] * (Borders[2] - z) + pi * z * z * (np.sqrt(rr) - 1 / 3 * z)
 
+particle_list_Ag = init_list_random_Ag(particle_number_Ag, radius_Ag, mass_Ag, epsilon_Ag, sigma_Ag, alpha_Ag, Borders, z)
+
+particle_number_Al = len(particle_list_Al)
 particle_number = particle_number_Ag + particle_number_Al
 particle_list = np.concatenate([particle_list_Ag, particle_list_Al])
 
 pressure_moment = np.array([0. for i in range (stepnumber)])
 adsorption_moment = np.array([0. for i in range (stepnumber)])
+adsorbent_number = 0
+for i in range (particle_number_Al):
+    if particle_list_Al[i].position[2] < z:
+        adsorbent_number += 1
+adsorbent_number += round(2*pi*np.sqrt(rr)/2*radius_Al)
 
 # Вычислительный эксперимент
 OutputFileName = "output.dump"
@@ -258,7 +336,7 @@ if os.path.exists(OutputFileName):
 
 for i in range(stepnumber):
     adsorbed_number = 0
-    solve_step(particle_list, particle_number_Ag, particle_number_Al, timestep, Borders)
+    solve_step(particle_list, particle_number_Ag, particle_number_Al, timestep, Borders, z)
 
     Radius = np.array([particle_list[j].radius for j in range (len(particle_list))])
     Positions = np.array(([particle_list[j].position for j in range (len(particle_list))]))
@@ -267,11 +345,12 @@ for i in range(stepnumber):
                      radius=Radius, pos=Positions, v=Velocities)
 
     for particle in particle_list:
-        if particle.adsorbate and not (particle.free):
+        if particle.adsorbate and particle.position[2] <= z and \
+                (particle.position[0] - center_x)**2 + (particle.position[1] - center_y)**2 < rr:
             adsorbed_number += 1
 
     pressure_moment[i] += (particle_number_Ag - adsorbed_number) / (volume * 1e-27) * BoltsmanConstant * temperature
-    adsorption_moment[i] += (adsorbed_number) / (particle_number_Al)
+    adsorption_moment[i] += (adsorbed_number) / (adsorbent_number)
 
 result = str(sum(pressure_moment)/stepnumber) + ' ' + str(sum(adsorption_moment)/stepnumber) + ' ' + str(temperature) \
          + ' ' + str(particle_number_Ag) + ' ' + str(Borders[0]) + ' ' + str(Borders[1]) + ' ' + str(Borders[2])
