@@ -1,10 +1,9 @@
 ﻿Name;Value
-AgNumOfAtoms;50
+AgNumOfAtoms;60
 AgRadius;1.06e-1
-AgMass;6.63352599e-26
+AgMass;0.17911901e-26
 AgEpsilon;0.00801
 AgSigma;3.54
-AlNumOfAtoms; 10
 AlRadius;1.21E-01
 AlMass;4.48038654E-26
 AlEpsilon;0.03917
@@ -14,5 +13,5 @@ AlAlpha;1.1646
 TimeStep;1.00E-16
 Steps;200
 OutputFrequency;5
-Borders;[[0, 4], [0, 4]]
+Borders;[[0, 4], [0, 4], [0, 4]]
 OutputFileName;output.dump
