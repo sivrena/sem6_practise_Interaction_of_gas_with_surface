@@ -2,6 +2,8 @@ import Dump
 
 import numpy as np
 from math import ceil, pi, sin, cos
+from pandas import read_csv
+import json
 import os
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
@@ -169,17 +171,60 @@ def solve_step(particle_list, Ag_num, Al_num, step, size, z):
         particle.compute_step(step, z)
 
 ########################################################################################################################
+def getData ():
+    parameters = {
+        'AgNumOfAtoms': 0,
+        'AgRadius': 0,
+        'AgMass': 0,
+        'AgEpsilon': 0,
+        'AgSigma': 0,
+
+        'AlNumOfAtoms': 0,
+        'AlRadius': 0,
+        'AlMass': 0,
+        'AlEpsilon': 0,
+        'AlSigma': 0,
+        'AlEps': 0,
+        'AlAlpha': 0,
+
+        'TimeStep': 1e-16,
+        'Steps': 100,
+        'OutputFrequency': 2,
+        'Borders': [[], [], []],
+        'OutputFileName': 'output.dump'
+    }
+
+    dataObj = read_csv('Data.csv', delimiter=';')
+    csvList = [tuple(row) for row in dataObj.values]
+    for x in csvList:
+        if x[0] == 'Borders':
+            parameters[x[0]] = json.loads(x[1])
+        elif x[0] == 'OutputFileName':
+            parameters[x[0]] = x[1]
+        else:
+            parameters[x[0]] = float(x[1])
+    parameters['AgNumOfAtoms'] = int(parameters['AgNumOfAtoms'])
+    parameters['Steps'] = int(parameters['Steps'])
+    parameters['OutputFrequency'] = int(parameters['OutputFrequency'])
+
+    return parameters
+
 def init_list_Al(N, radius, mass, epsilon, sigma, alpha, borders):
     particle_list = []
     particle_position_x = np.array([])
     particle_position_y = np.array([])
     particle_position_z = np.array([])
 
-    particle_number_bottom = [1, 6, 9]
+    particle_number_bottom = np.array([1]) #6, 9
+    for i in range (2):
+        particle_number_bottom = np.append(particle_number_bottom, int(round(2 * pi * radius * (i + 2) / (2 * radius))))
     angle_bottom = [2 * pi / particle_number_bottom[i] for i in range(len(particle_number_bottom))]
     radius_bottom = [radius * (i + 1) for i in range(len(particle_number_bottom))]
 
-    particle_number_layers = [13, 16, 19, 22, 25, 28]
+    particle_number_layers = np.array([]) #13, 16, 19, 22, 25, 28
+    for i in range (6):
+        particle_number_layers = np.append(particle_number_layers, int(round(2 * pi * radius *\
+                                                                (i + 1 + len(particle_number_bottom)) / (2 * radius))))
     angle_layers = [2 * pi / particle_number_layers[i] for i in range(len(particle_number_layers))]
     radius_layers = [radius * (i + len(particle_number_bottom) + 1) for i in range(len(particle_number_layers))]
 
@@ -189,7 +234,7 @@ def init_list_Al(N, radius, mass, epsilon, sigma, alpha, borders):
     particle_position_y = np.append(particle_position_y, center_y)
     particle_position_z = np.append(particle_position_z, 0.)
 
-    surface = [31, 34, 39, 44, 49, 54]
+    surface = np.array([31, 34, 39, 44, 49, 54]) #
     angle_surface = [2 * pi / surface[i] for i in range(len(surface))]
     radius_surface = [radius * (i + len(particle_number_bottom) + len(particle_number_layers) + 1) for i in
                       range(len(surface))]
@@ -206,7 +251,7 @@ def init_list_Al(N, radius, mass, epsilon, sigma, alpha, borders):
     for i in range(len(particle_number_layers)):
         r = radius_layers[i]
         angle = angle_layers[i]
-        for j in range(particle_number_layers[i]):
+        for j in range(int(particle_number_layers[i])):
             particle_position_x = np.append(particle_position_x, center_x + r * cos(angle))
             particle_position_y = np.append(particle_position_y, center_y + r * sin(angle))
             particle_position_z = np.append(particle_position_z, (i + 1) * radius)
@@ -217,7 +262,7 @@ def init_list_Al(N, radius, mass, epsilon, sigma, alpha, borders):
     for i in range(len(surface)):
         r = radius_surface[i]
         angle = angle_surface[i]
-        for j in range(surface[i]):
+        for j in range(int(surface[i])):
             x = center_x + r * k * cos(angle)
             y = center_y + r * k * sin(angle)
             if (x <= borders[0] and y <= borders[1] and z<= borders[2] and x >= 0 and y >= 0 and z >= 0):
@@ -284,8 +329,9 @@ def init_list_random_Ag (N, radius, mass, epsilon, sigma, alpha, borders, z):
         particle_list.append(newparticle)
     return particle_list
 
-#boxsize = 4
-Borders = [4, 4, 4] # границы (в нанометрах)
+parameters = getData()
+
+Borders = [parameters['Borders'][0][1], parameters['Borders'][1][1], parameters['Borders'][2][1]] #границы области
 tfin = 10 # время симуляции
 stepnumber = 200 # число шагов
 timestep = tfin/stepnumber #временной шаг
@@ -294,17 +340,17 @@ BoltsmanConstant = 1.38 * 10e-23
 temperature = 300 # Кельвины
 
 particle_number_Al = 0 # число частиц
-radius_Al = 1.21e-01 # данные рассматриваемой частицы
-mass_Al = 4.4803831e-26
-epsilon_Al = 0.2703 #0.03917
-sigma_Al = 3.253
-alpha_Al = 1.1646
+radius_Al = parameters['AlRadius'] # данные рассматриваемой частицы
+mass_Al = parameters['AlMass']
+epsilon_Al = parameters['AlEps']
+sigma_Al = parameters['AlSigma']
+alpha_Al = parameters['AlAlpha']
 
-particle_number_Ag = 75 # число частиц
-radius_Ag = 1.06e-1 # данные рассматриваемой частицы
-mass_Ag = 0.17911901e-26
-epsilon_Ag = 0.00801
-sigma_Ag = 3.54
+particle_number_Ag = parameters['AgNumOfAtoms'] # число частиц
+radius_Ag = parameters['AgRadius'] # данные рассматриваемой частицы
+mass_Ag = parameters['AgMass']
+epsilon_Ag = parameters['AgEpsilon']
+sigma_Ag = parameters['AgSigma']
 alpha_Ag = 0
 
 particle_list_Al = init_list_Al(particle_number_Al, radius_Al, mass_Al, epsilon_Al, sigma_Al, alpha_Al, Borders)
