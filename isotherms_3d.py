@@ -8,12 +8,16 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
+
+global center
+global R
+global Z
 ########################################################################################################################
 # Создаем класс "Particle" для хранения информации о каждой частице из модели (координаты, скорость, ...)
 # Класс "Particle" содержит функцию compute_step для вычисления координат и скорости частицы для следующего шага с
 # помощью метода молекулярной динамики. Также содержит функции вычисления скорости после столкновения.
 class Particle:
-    def __init__(self, mass, radius, epsilon, sigma, position, velocity, force, acceleration, alpha, adsorbate):
+    def __init__(self, mass, radius, epsilon, sigma, position, velocity, force, acceleration, alpha, adsorbate, color):
         self.mass = mass #масса частицы
         self.radius = radius #радиус частицы
         self.epsilon = epsilon #глубина потенциальной ямы
@@ -22,6 +26,7 @@ class Particle:
 
         self.adsorbate = adsorbate  #показывает, чем является частица - адсорбент или адсорбтив
         self.free = True  #флаг для адсорбата, а также для занятых активных центров
+        self.color = color
         self.count = 0
         self.vel_before_ads = 0.
 
@@ -40,10 +45,10 @@ class Particle:
         # вычисляем позицию и скорость частицы для следующего шага
         self.acceleration = 1 / self.mass * self.force
         self.position += step * self.velocity + 1 / 2 * self.acceleration * step * step
-        if self.adsorbate:
-            if self.position[2] < z:
-                d = self.position[2]
-                self.position[2] += z - d
+        #if self.adsorbate:
+            #if self.position[2] < z:
+                #d = self.position[2]
+                #self.position[2] += z - d
         self.velocity += self.acceleration * step
 
         self.solpos.append(np.copy(self.position))
@@ -77,8 +82,14 @@ class Particle:
             else:
                 if ads1:
                     self.velocity = v1 - 2. * m2 / (m1 + m2) * np.dot(v1 - v2, di) / (np.linalg.norm(di) ** 2.) * di
-                elif ads2:
-                    particle.velocity = v2 - 2. * m1 / (m2 + m1) * np.dot(v2 - v1, (-di)) / (np.linalg.norm(di) ** 2.) * (-di)
+                    rght = center[0] + R
+                    lft = center[0] - R
+                    up = center[0] + R
+                    dwn = center[0] - R
+                    zz = Z
+                    if (particle.position[0] <= rght and particle.position[0] >= lft and \
+                            particle.position[1] <= up and particle.position[1] >= dwn and particle.position[2] < zz):
+                        self.color = [128, 0, 128]
             """elif ads1 == ads2 and self.free:
                 self.velocity = v1 - 2. * m2 / (m1 + m2) * np.dot(v1 - v2, di) / (np.linalg.norm(di) ** 2.) * di
             elif ads1 == ads2 and particle.free:
@@ -279,7 +290,7 @@ def init_list_Al(N, radius, mass, epsilon, sigma, alpha, borders):
         f = np.array([0 for i in range (len(v))])
         a = np.array([0 for i in range(len(v))])
         pos = np.array([particle_position_x[i], particle_position_y[i], particle_position_z[i]])
-        newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha, adsorbate=0)
+        newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha, adsorbate=0, color=[0, 128, 0])
         #coeff = np.sqrt(N)
         #collision = True
         #while (collision == True):
@@ -320,7 +331,7 @@ def init_list_random_Ag (N, radius, mass, epsilon, sigma, alpha, borders, z):
             pos = np.append(pos, posz)
             if pos[2] < z:
                 pos[2] += z
-            newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha, adsorbate=1)
+            newparticle = Particle(mass, radius, epsilon, sigma, pos, v, f, a, alpha, adsorbate=1, color = [255, 255, 255])
             for j in range(len(particle_list)):
                 collision = newparticle.check_coll(particle_list[j])
                 if collision == True:
@@ -359,6 +370,9 @@ center_x = Borders[0] / 2
 center_y = Borders[1] / 2
 rr = (particle_list_Al[len(particle_list_Al) - 1].position[0] - center_x) ** 2 + \
     (particle_list_Al[len(particle_list_Al) - 1].position[1] - center_y) ** 2
+center = [center_x, center_y]
+R = np.sqrt(rr)
+Z = z
 volume = Borders[0] * Borders[1] * (Borders[2] - z) + pi * z * z * (np.sqrt(rr) - 1 / 3 * z)
 
 particle_list_Ag = init_list_random_Ag(particle_number_Ag, radius_Ag, mass_Ag, epsilon_Ag, sigma_Ag, alpha_Ag, Borders, z)
@@ -387,8 +401,9 @@ for i in range(stepnumber):
     Radius = np.array([particle_list[j].radius for j in range (len(particle_list))])
     Positions = np.array(([particle_list[j].position for j in range (len(particle_list))]))
     Velocities = np.array([particle_list[j].velocity for j in range (len(particle_list))])
+    Colors = np.array([particle_list[j].color for j in range(len(particle_list))])
     Dump.writeOutput(OutputFileName, particle_number, i, Borders,
-                     radius=Radius, pos=Positions, v=Velocities)
+                     radius=Radius, pos=Positions, v=Velocities, Color=Colors)
 
     for particle in particle_list:
         if particle.adsorbate and particle.position[2] <= z and \
@@ -415,12 +430,12 @@ plt.subplots_adjust(bottom=0.2, left=0.15)
 
 # Строим диаграмму распределение молекул по скоростям, исходя из результатов эксперимента
 vel_mod = []
-for i in range (len(particle_list[:particle_number_Ag])):
+for i in range(len(particle_list[:particle_number_Ag])):
     if particle_list[i].free:
         vel_mod.append(particle_list[i].solvel_mag[0])
 
 string = 'Temp. = ' + str(temperature) + '\nPart.numb. = ' + str(particle_number_Ag) + '\nArea = ' + str(Borders[0]) \
-             + 'x' + str(Borders[1]) + 'x' + str(Borders[2])
+         + 'x' + str(Borders[1]) + 'x' + str(Borders[2])
 hist.hist(vel_mod, bins=30, density=True, label=string)
 hist.set_xlabel("Speed")
 hist.set_ylabel("Frecuency Density")
@@ -428,7 +443,8 @@ hist.legend(loc="upper right")
 
 # Используем Slider (ползунок) для отображения изменений с течением времени
 slider_ax = plt.axes([0.1, 0.05, 0.8, 0.05])
-slider = Slider(slider_ax,  't', 0, tfin, valinit=0, color='#5c05ff')
+slider = Slider(slider_ax, 't', 0, tfin, valinit=0, color='#5c05ff')
+
 
 # функция обновления отображаемой информации
 def update(time):
@@ -438,15 +454,16 @@ def update(time):
 
     # Распределение молекул по скоростям, исходя из результатов эксперимента
     vel_mod = []
-    for j in range (len(particle_list[:particle_number_Ag])):
+    for j in range(len(particle_list[:particle_number_Ag])):
         if particle_list[j].free:
             vel_mod.append(particle_list[j].solvel_mag[i])
-            
+
     hist.hist(vel_mod, bins=30, density=True, label=string)
     hist.set_title('Velocity distribution')
     hist.set_xlabel("Speed")
     hist.set_ylabel("Frecuency Density")
     hist.legend(loc="upper right")
+
 
 slider.on_changed(update)
 plt.show()
