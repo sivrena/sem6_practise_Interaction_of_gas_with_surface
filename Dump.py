@@ -3,7 +3,6 @@ import numpy as np
 
 def writeOutput(filename, natoms, timestep, box, **data):
     axis = ('x', 'y', 'z')
-    color = ('r', 'g', 'b')
 
     with open(filename, 'a') as fp:
         """ Заголовок .dump файла """
@@ -26,8 +25,6 @@ def writeOutput(filename, natoms, timestep, box, **data):
                 for i in range(nCols):
                     if key == 'pos':
                         data['{}'.format(axis[i])] = data[key][:, i]
-                    elif key == 'Colors':
-                        data['{}'.format(color[i])] = data[key][:, i]
                     else:
                         data['{}_{}'.format(key, axis[i])] = data[key][:, i]
 
